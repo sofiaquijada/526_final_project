@@ -56,8 +56,6 @@ km_table$n_i <- sapply(
 ) 
 ```
 
-DOES THIS CONSIDER CENSORED OBSERVATIONS???
-
 Compute $\hat{S}(t)=∏_{ti≤t}(1−d_i/n_i)$ for each row. Multiply them to get $\hat{S}(t)$
 
 ```{r}
@@ -257,28 +255,209 @@ theta_upper <- exp(
 )
 
 # correct ordering
-lower_band_36 <- lower_S$Survival^theta_lower
-upper_band_36 <- lower_S$Survival^(1/theta_lower)
+lower_band_36 <- lower_S$Survival^(1/theta_lower)
+upper_band_36 <- lower_S$Survival^(theta_lower)
 
-lower_band_72 <- upper_S$Survival^theta_upper
-upper_band_72 <- upper_S$Survival^(1/theta_upper)
+lower_band_72 <- upper_S$Survival^(1/theta_upper)
+upper_band_72 <- upper_S$Survival^(theta_upper)
 
 print(c(lower_band_36, upper_band_36))
 
 print(c(lower_band_72, upper_band_72))
 ```
 
-unsure abt this
+This is just for the end points, here is for the entire time period:
 
-g\) Using log transformation find 95% Hall-Wellner confidence band for the survival function over the range 3-6 yrs (36-72 months)
+```{r}
+# bounds in weeks
+lower_t <- 36 * 4.345
+upper_t <- 72 * 4.345
 
-h\) Estimate the mean survival time restricted to 400 months. Provide 95% CI for restricted mean survival time.
+lower_S <- get_survival(lower_t)
+upper_S <- get_survival(upper_t)
 
-$ln[\hat{S}(t)]$
+# variance = SE^2
+a_L <- N * (lower_S$SE)^2 / (1 + N * (lower_S$SE)^2) #0.234
+a_U <- N * (upper_S$SE)^2 / (1 + N * (upper_S$SE)^2) #0.321
 
-i\) Estimate median time to death and find 95% CI for median survival time based on linear CI.
+# from Table C.3 - between 3.06 and 3.02 
+c_alpha <- 3.04
 
-COULD IT BE THAT THIS QUESTION IS WRONG BECAUSE DIDNT TAKE CENSORING INTO ACCOUNT?
+times_weeks <- km_table$time[
+  km_table$time >= lower_t &
+  km_table$time <= upper_t
+]
+
+#compute EP band
+EP_band <- lapply(times_weeks, function(t) {
+
+  S <- get_survival(t)
+
+  if (S$Survival == 0) {
+    return(data.frame(
+      time = t,
+      Survival = 0,
+      lower = 0,
+      upper = 0
+    ))
+  }
+
+  theta <- exp(
+    c_alpha * S$SE / log(S$Survival)
+  )
+
+  lower <- S$Survival^(1/theta)
+  upper <- S$Survival^(theta)
+
+  data.frame(
+    time = t,
+    Survival = S$Survival,
+    lower = lower,
+    upper = upper
+  )
+})
+
+EP_band <- do.call(rbind, EP_band)
+EP_band
+```
+
+Since data given is in weeks, there are little observations that go beyond 36 months. I suspect the questions were designed thinking the "time" data was in weeks.
+
+**g) Using log transformation find 95% Hall-Wellner confidence band for the survival function over the range 3-6 yrs (36-72 months)**
+
+$a_L = \frac{n Var(t_L),}{1+n Var(t_L))}$ , $a_U = \frac{n Var(t_U),}{1+n Var(t_U))}$
+
+Confidence band =$[\hat{S}(t_1)^{1/\theta}, \hat{S}(t_1)^{ \theta}]$,
+
+Where $\theta =exp(\frac{k_\alpha(a_L, a_U)(1 + nVar(S(t))}{n^{1/2}ln[\hat{S}(t)]})$
+
+$k_\alpha$ from table C.4 of Appendix C.
+
+```{r}
+# bounds in weeks
+lower_t <- 36 * 4.345
+upper_t <- 72 * 4.345
+
+lower_S <- get_survival(lower_t)
+upper_S <- get_survival(upper_t)
+
+# variance = SE^2
+a_L <- N * (lower_S$SE)^2 / (1 + N * (lower_S$SE)^2) #0.234
+a_U <- N * (upper_S$SE)^2 / (1 + N * (upper_S$SE)^2) #0.321
+
+# from Table C.3 - between 3.06 and 3.02 
+k_alpha <- 1 #doesn't seem to exist :c, put in 1 as a placeholder
+
+times_weeks <- km_table$time[
+  km_table$time >= lower_t &
+  km_table$time <= upper_t
+]
+
+#compute EP band
+EP_log_band <- lapply(times_weeks, function(t) {
+
+  S <- get_survival(t)
+
+  if (S$Survival == 0) {
+    return(data.frame(
+      time = t,
+      Survival = 0,
+      lower = 0,
+      upper = 0
+    ))
+  }
+
+  theta <- exp(
+    k_alpha * (1+N*S$SE) / (N^(1/2)*log(S$Survival))
+  )
+
+  lower <- S$Survival^(1/theta)
+  upper <- S$Survival^(theta)
+
+  data.frame(
+    time = t,
+    Survival = S$Survival,
+    lower = lower,
+    upper = upper
+  )
+})
+
+EP_log_band <- do.call(rbind, EP_log_band)
+EP_log_band
+```
+
+I think since question was designed thinking time data was in months and not weeks, this led to the fact $k_\alpha$\[0.23, 0.32\] doesn't exist for our chosen time limits. The code above is what would work if this were a valid interval for our data, I set k = 1 as a placeholder.
+
+**h) Estimate the mean survival time restricted to 400 months. Provide 95% CI for restricted mean survival time.**
+
+400 months likely refers to 400 weeks, so will proceed as if 400 months = 400 weeks.
+
+$\hat\mu(\tau) = \int_0^\tau \hat{S}(t)\,dt$
+
+$\widehat{\mathrm{Var}}\!\left[\hat{\mu}(\tau)\right]
+=
+\sum_{i=1}^{D}
+\left(
+\int_{t_i}^{\tau} \hat{S}(t)\,dt
+\right)^2
+\frac{d_i}{Y_i (Y_i - d_i)}$
+
+$\hat{\mu}(\tau)
+\pm
+z_{1-\alpha/2}
+\sqrt{
+\widehat{\mathrm{Var}}\!\left[\hat{\mu}(\tau)\right]
+}$
+
+```{r}
+#will use survival package
+fit <- survfit(
+  Surv(time, delta) ~ 1,
+  data = aneuploid
+)
+
+summary(fit, rmean = tau)$table
+
+rmst <- 146.6
+SE_rmst <- 27.7
+
+CI_lower <- rmst - 1.96*SE_rmst
+CI_upper <- rmst + 1.96*SE_rmst
+c(CI_lower, CI_upper)
+```
+
+Mean survival time: 146.6
+
+95% CI: \[92, 200\]
+
+**i) Estimate median time to death and find 95% CI for median survival time based on linear CI.**
+
+$\hat{t}_{0.5} = \inf \{ t : \hat{S}(t) \le 0.5 \}$, the first time KM curve drops to 0.5 or below.
+
+$\hat{S}(t) \pm z_{1-\alpha/2}\, SE(\hat{S}(t))$
+
+```{r}
+median_idx <- which(km_table$S_t <= 0.5)[1]
+
+median_time <- km_table$time[median_idx]
+
+median_time
+
+z <- 1.96
+
+lower_surv <- km_table$S_t - z * km_table$SE_S_t
+upper_surv <- km_table$S_t + z * km_table$SE_S_t
+lower_idx <- which(lower_surv <= 0.5)[1]
+lower_median <- km_table$time[lower_idx]
+upper_idx <- which(upper_surv <= 0.5)[1]
+upper_median <- km_table$time[upper_idx]
+
+c(
+  Median = median_time,
+  Lower95 = lower_median,
+  Upper95 = upper_median
+)
+```
 
 ## Question 4.2
 
@@ -392,3 +571,88 @@ log(get_survival(t_max)$Survival)/t_max #-0.004
 Estimate for t \> 363 days to death (max t for those who died at status check) = 0.21. We can estimate this for any t using exp(t \* -0.004).
 
 **c) Compute the estimate of the survival function and an estimate of its SE using complete follow-up on each patient. Compare this estimate to part a).**
+
+this time around use entire dataset, so time not time2, and death not death2
+
+```{r}
+rm(list = ls())
+data(lung)
+
+N <- nrow(lung)
+
+#order event times
+event_times <- sort(unique(lung$time[lung$death == 1])) #on 3/31/80
+
+#start constructing table
+km_table <- data.frame(
+  time = event_times
+)
+
+#compute di, number of deaths at time ti
+km_table$d_i <- sapply(
+  km_table$time,
+  function(t) sum(lung$time == t & lung$death == 1)
+)
+
+#compute ni, number at risk at time ti
+km_table$n_i <- sapply(
+  km_table$time,
+  function(t) sum(lung$time >= t)) #observations before t
+
+#survival step terms
+km_table$surv_step <- 1 - km_table$d_i / km_table$n_i
+
+#multiply to get estimator for S(t) at each t
+km_table$S_t <- cumprod(km_table$surv_step)
+
+#compute sum term 
+km_table$greenwood_term <-
+  km_table$d_i / (km_table$n_i * (km_table$n_i - km_table$d_i))
+
+#compute cumulative sum
+km_table$cum_greenwood <-
+  cumsum(km_table$greenwood_term)
+
+#compute greenwood variance by mult cumsum with S(t) estimate for each t
+km_table$var_S_t <-
+  (km_table$S_t^2) * km_table$cum_greenwood
+
+#compute SE
+km_table$SE_S_t <-
+  sqrt(km_table$var_S_t)
+
+get_survival <- function(target_time) {
+
+  eligible <- which(km_table$time <= target_time)
+
+  if (length(eligible) == 0) {
+
+    return(data.frame(
+      time = target_time,
+      Survival = 1,
+      SE = 0
+    ))
+
+  }
+
+  idx <- max(eligible)
+
+  data.frame(
+    time = target_time,
+    Survival = km_table$S_t[idx],
+    SE = km_table$SE_S_t[idx]
+  )
+}
+```
+
+Here is estimate of survival function as well as SE
+
+```{r}
+km_table %>% select(time, d_i, n_i, S_t, SE_S_t)
+```
+
+**d) Estimate the mean time to death restricted to 683 days based on product-limit estimator found in part c)**
+
+**e) Estimate the mean time to death by finding the area under the survival curve found in part c. Find SE of estimate.**
+
+**f) Compute the usual estimate of the time to death based on complete follow-up data by finding the arithmetic mean of the complete follow-up data. Find SE of this estimate in the usual way as sample SD/sqrt(n). Compare to e)**
