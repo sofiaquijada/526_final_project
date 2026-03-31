@@ -1,0 +1,288 @@
+---
+title: "Assignment 3"
+format: html
+editor: visual
+author: "Sofia Quijada"
+---
+
+```{r}
+library(KMsurv)
+library(tidyverse)
+library(survival)
+```
+
+## Question 4.1
+
+**Effect of ploidy on survival of patients with cancer of the tongue. Using data on ANEUPLOID TUMORS only.**
+
+**a) Estimate survival function at 12 months and 60 months after transplant using table 1.6 data. Get SE of estimates**
+
+type: Tumor DNA profile (1=Aneuploid Tumor, 2=Diploid Tumor) time: Time to death or on-study time, weeks delta: Death indicator (0=alive, 1=dead). 0 = censored in this dataset, as per table 1.6 description.
+
+```{r}
+data(tongue)
+
+aneuploid <- subset(tongue, type == 1)
+
+#number of people at risk at beginning of study = number of patients we have data for
+N <- nrow(aneuploid)
+```
+
+Recall our time is in weeks, change at the end.
+
+$\hat{S}(t)$ = 1 if t less than $t_1$ of interest.
+
+$\hat{S}(t)=∏_{ti≤t}(1−d_i/Y_i)$ if t beyond $t_1$ of interest.
+
+```{r}
+#order event times, where delta = 1
+event_times <- sort(unique(aneuploid$time[aneuploid$delta == 1]))
+
+#start constructing table
+km_table <- data.frame(
+  time = event_times
+)
+
+#compute di, number of deaths at time ti
+km_table$d_i <- sapply(
+  km_table$time,
+  function(t) sum(aneuploid$time == t & aneuploid$delta == 1) #obs with event (delta = 1) at time t
+)
+
+#compute ni, number at risk at time ti
+km_table$n_i <- sapply(
+  km_table$time,
+  function(t) sum(aneuploid$time >= t) #obs before time t
+)
+```
+
+Compute $\hat{S}(t)=∏_{ti≤t}(1−d_i/n_i)$ for each row. Multiply them to get $\hat{S}(t)$
+
+```{r}
+#survival step terms
+km_table$surv_step <- 1 - km_table$d_i / km_table$n_i
+
+#multiply to get estimator for S(t) at each t
+km_table$S_t <- cumprod(km_table$surv_step)
+```
+
+Compute variance and SE for each estimate.
+
+$\widehat{\mathrm{Var}}(\hat{S}(t)) = \hat{S}(t)^2 \sum_{t_i \le t} \frac{d_i}{Y_i (Y_i - d_i)}$
+
+```{r}
+#compute sum term 
+km_table$greenwood_term <-
+  km_table$d_i / (km_table$n_i * (km_table$n_i - km_table$d_i))
+
+#compute cumulative sum
+km_table$cum_greenwood <-
+  cumsum(km_table$greenwood_term)
+
+#compute greenwood variance by mult cumsum with S(t) estimate for each t
+km_table$var_S_t <-
+  (km_table$S_t^2) * km_table$cum_greenwood
+
+#compute SE
+km_table$SE_S_t <-
+  sqrt(km_table$var_S_t)
+```
+
+KM estimator uses the last event time ≤ target time.
+
+```{r}
+get_survival <- function(target_time) {
+
+  eligible <- which(km_table$time <= target_time)
+
+  if (length(eligible) == 0) {
+
+    return(data.frame(
+      time = target_time,
+      Survival = 1,
+      SE = 0
+    ))
+
+  }
+
+  idx <- max(eligible)
+
+  data.frame(
+    time = target_time,
+    Survival = km_table$S_t[idx],
+    SE = km_table$SE_S_t[idx]
+  )
+}
+#conversion factor from months to weeks is 4.345
+#input should be in weeks, 12 or 60 months in weeks
+S_12 <- get_survival(12*4.345)
+S_60 <- get_survival(60*4.345)
+
+S_12
+S_60
+```
+
+S(t = 12 months) = 0.65, SE = 0.07
+
+S(t = 60 months) = 0.23, SE = 0.09
+
+**b) Estimate the cumulative hazard rate H(t) at 60 months. Find the standard error of** $\hat{H}(t)$ **Estimate S(60) by exp(-** $\hat{H}(t)$**) and compare to part a)**
+
+$\hat{H}(t) = -ln[\hat{S}(t)]$ from KM estimator
+
+```{r}
+H_60 <- -log(S_60$Survival)
+H_60
+```
+
+Use Nelson Aalen cumulative hazard rate estimator instead.
+
+$\hat{H}(t) = \sum_{t_i \le t} \frac{d_i}{n_i}$, or 0 if $t_1$ of interest bigger than t.
+
+$\mathrm{Var}\!\left[\hat{H}(t)\right] = \sum_{t_i \le t} \frac{d_i}{Y_i^2}$
+
+```{r}
+#add nelson-aalen increments
+km_table$haz_increment <- km_table$d_i / km_table$n_i
+
+#compute cumulative hazard
+km_table$H_t <- cumsum(km_table$haz_increment)
+
+#calculate variance and SE
+km_table$var_increment <- km_table$d_i / (km_table$n_i^2)
+
+km_table$var_H_t <- cumsum(km_table$var_increment)
+
+km_table$SE_H_t <- sqrt(km_table$var_H_t)
+
+#estimate at 60 months
+idx60 <- max(which(km_table$time <= 60*4.345))
+H60 <- km_table$H_t[idx60]
+SE_H60 <- km_table$SE_H_t[idx60]
+H60
+SE_H60
+```
+
+$\hat{H}(t = 60)$ = 1.39, SE = 0.375.
+
+Estimate S(60) from H: $\hat{S}(t) = \exp\!\left[-\hat{H}(t)\right]$, compare to S(60)
+
+```{r}
+S60_from_NA <- exp(-H60)
+
+S_60$Survival #KM
+S60_from_NA 
+```
+
+The Nelson-Aalen survival estimator derived from the cumulative hazard rate estimator has a slightly higher value.
+
+**c) Find a 95% linear CI for S(60)**
+
+$\hat{S}(t) \pm z_{0.975}\,\mathrm{SE}\!\left(\hat{S}(t)\right)$
+
+```{r}
+z <- 1.96
+
+lower_linear <- S_60$Survival - z * S_60$SE
+upper_linear <- S_60$Survival + z * S_60$SE
+
+c(lower_linear, upper_linear)
+```
+
+\[0.042, 0.42\]. This is a big confidence interval.
+
+**d) Find a 95% log-transformed CI for S(60)**
+
+Confidence interval =$[\hat{S}(t_1)^{1/\theta}, \hat{S}(t_1)^{ \theta}]$,
+
+Where $\theta = exp({z_{0.975}SE(S(t_1))/ln(S(t_1)})$
+
+```{r}
+theta <- exp(z * S_60$SE / log(S_60$Survival))
+lower_log <- S_60$Survival^(1/theta)
+upper_log <- S_60$Survival^theta
+c(lower_log, upper_log)
+```
+
+\[0.187, 0.273\] 95% CI for S(60) = 0.23, much more reasonable
+
+**e) Find a 95% arcsine-square root CI for S(60)**
+
+Not computing this manually. Use "survival" package.
+
+```{r}
+fit <- survfit(Surv(time, delta) ~ 1, data = aneuploid, conf.type = "arcsin")
+summary(fit, times = c(12*4.345, 60*4.345))
+```
+
+\[0.0744, 0.436\] is 95% arcsin square root survival CI.
+
+**f) Using the log transformation find a 95% EP confidence band for the survival function over the range 3-6 yrs (36-72 months)**
+
+range: 36 \< t \< 72 months
+
+n = sample size
+
+$a_L = \frac{n Var(t_L),}{1+n Var(t_L))}$ , $a_U = \frac{n Var(t_U),}{1+n Var(t_U))}$
+
+Confidence band =$[\hat{S}(t_1)^{1/\theta}, \hat{S}(t_1)^{ \theta}]$,
+
+Where $\theta =exp(\frac{c_\alpha(a_L, a_U) SE(S(t)))}{ln[\hat{S}(t)]})$
+
+$c_\alpha$ found from table C.3 of textbook using values of $a_L$ and $a_u$
+
+```{r}
+# bounds in weeks
+lower_t <- 36 * 4.345
+upper_t <- 72 * 4.345
+
+lower_S <- get_survival(lower_t)
+upper_S <- get_survival(upper_t)
+
+# variance = SE^2
+a_L <- N * (lower_S$SE)^2 / (1 + N * (lower_S$SE)^2) #0.234
+a_U <- N * (upper_S$SE)^2 / (1 + N * (upper_S$SE)^2) #0.321
+
+# from Table C.3 - between 3.06 and 3.02 
+c_alpha <- 3.04
+
+theta_lower <- exp(
+  c_alpha * lower_S$SE / log(lower_S$Survival)
+)
+
+theta_upper <- exp(
+  c_alpha * upper_S$SE / log(upper_S$Survival)
+)
+
+# correct ordering
+lower_band_36 <- lower_S$Survival^theta_lower
+upper_band_36 <- lower_S$Survival^(1/theta_lower)
+
+lower_band_72 <- upper_S$Survival^theta_upper
+upper_band_72 <- upper_S$Survival^(1/theta_upper)
+
+print(c(lower_band_36, upper_band_36))
+
+print(c(lower_band_72, upper_band_72))
+```
+
+unsure abt this
+
+g\) Using log transformation find 95% Hall-Wellner confidence band for the survival function over the range 3-6 yrs (36-72 months)
+
+h\) Estimate the mean survival time restricted to 400 months. Provide 95% CI for restricted mean survival time.
+
+$ln[\hat{S}(t)]$
+
+i\) Estimate median time to death and find 95% CI for median survival time based on linear CI.
+
+## Question 4.2
+
+25 patients with inoperative lung cancer, all patients followed until death. Start = Nov 1 1979, end = Dec 23 1979. One interim analysis on March 31 1980, when only 13 patients had died.
+
+[a) Estimate the survival function based on the available sample information at the time of interim analysis on 3/31/80. Provide the SE of your estimate.]{.underline}
+
+```{r}
+rm(list = ls())
+data(lung)
+```
