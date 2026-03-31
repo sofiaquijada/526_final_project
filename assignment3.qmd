@@ -53,8 +53,10 @@ km_table$d_i <- sapply(
 km_table$n_i <- sapply(
   km_table$time,
   function(t) sum(aneuploid$time >= t) #obs before time t
-)
+) 
 ```
+
+DOES THIS CONSIDER CENSORED OBSERVATIONS???
 
 Compute $\hat{S}(t)=∏_{ti≤t}(1−d_i/n_i)$ for each row. Multiply them to get $\hat{S}(t)$
 
@@ -276,13 +278,117 @@ $ln[\hat{S}(t)]$
 
 i\) Estimate median time to death and find 95% CI for median survival time based on linear CI.
 
+COULD IT BE THAT THIS QUESTION IS WRONG BECAUSE DIDNT TAKE CENSORING INTO ACCOUNT?
+
 ## Question 4.2
 
 25 patients with inoperative lung cancer, all patients followed until death. Start = Nov 1 1979, end = Dec 23 1979. One interim analysis on March 31 1980, when only 13 patients had died.
 
-[a) Estimate the survival function based on the available sample information at the time of interim analysis on 3/31/80. Provide the SE of your estimate.]{.underline}
+**a) Estimate the survival function based on the available sample information at the time of interim analysis on 3/31/80. Provide the SE of your estimate.**
+
+time = Days to death
+death = Death indicator (1=dead), complete follow-up on all patients
+time2 = Days to 3/31/80 or death (interim analysis)
+death2 = Death indicator as of 3/31/80 (1=dead, 0=alive)
+
+Time is in days:
+
+$\hat{S}(t)$ = 1 if t less than $t_1$ of interest.
+
+$\hat{S}(t)=∏_{ti≤t}(1−d_i/Y_i)$ if t beyond $t_1$ of interest.
 
 ```{r}
 rm(list = ls())
 data(lung)
+
+N <- nrow(lung)
+
+#order event times
+event_times <- sort(unique(lung$time2[lung$death2 == 1])) #on 3/31/80
+
+#start constructing table
+km_table <- data.frame(
+  time = event_times
+)
+
+#compute di, number of deaths at time ti
+km_table$d_i <- sapply(
+  km_table$time,
+  function(t) sum(lung$time2 == t & lung$death2 == 1)
+)
+
+#compute ni, number at risk at time ti
+km_table$n_i <- sapply(
+  km_table$time,
+  function(t) sum(lung$time2 >= t)) #observations before t
+
+#survival step terms
+km_table$surv_step <- 1 - km_table$d_i / km_table$n_i
+
+#multiply to get estimator for S(t) at each t
+km_table$S_t <- cumprod(km_table$surv_step)
+
+#compute sum term 
+km_table$greenwood_term <-
+  km_table$d_i / (km_table$n_i * (km_table$n_i - km_table$d_i))
+
+#compute cumulative sum
+km_table$cum_greenwood <-
+  cumsum(km_table$greenwood_term)
+
+#compute greenwood variance by mult cumsum with S(t) estimate for each t
+km_table$var_S_t <-
+  (km_table$S_t^2) * km_table$cum_greenwood
+
+#compute SE
+km_table$SE_S_t <-
+  sqrt(km_table$var_S_t)
+
+get_survival <- function(target_time) {
+
+  eligible <- which(km_table$time <= target_time)
+
+  if (length(eligible) == 0) {
+
+    return(data.frame(
+      time = target_time,
+      Survival = 1,
+      SE = 0
+    ))
+
+  }
+
+  idx <- max(eligible)
+
+  data.frame(
+    time = target_time,
+    Survival = km_table$S_t[idx],
+    SE = km_table$SE_S_t[idx]
+  )
+}
 ```
+
+Here is estimate of survival function as well as SE:
+
+```{r}
+km_table %>% select(time, d_i, n_i, S_t, SE_S_t)
+```
+
+**b) Use the Brown, Hollandar and Kowar technique to complete right hand tail of the product-limit estimate found in part a).**
+
+Non parametric estimation beyond $t_{max}$ correspond to the 2 most extreme scenarios: complete the tail by an exponential curve picked to give the same value of S($t_{max}$).
+
+$\hat{S}(t)$ for t \> $t_{max}$ is = $exp(t ln[\hat{S}(t_{max})]/t_{max}]$  - plug in t over max t of interest
+
+For t \> 363 (days to death):
+
+```{r}
+t_max <- 320 #max time for status check, not entire study
+
+exp(363 * log(get_survival(t_max)$Survival)/t_max) 
+log(get_survival(t_max)$Survival)/t_max #-0.004
+```
+
+Estimate for t \> 363 days to death (max t for those who died at status check) = 0.21. We can estimate this for any t using exp(t \* -0.004).
+
+**c) Compute the estimate of the survival function and an estimate of its SE using complete follow-up on each patient. Compare this estimate to part a).**
