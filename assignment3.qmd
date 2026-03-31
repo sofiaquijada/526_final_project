@@ -411,6 +411,8 @@ z_{1-\alpha/2}
 
 ```{r}
 #will use survival package
+tau <- 400
+
 fit <- survfit(
   Surv(time, delta) ~ 1,
   data = aneuploid
@@ -651,8 +653,90 @@ Here is estimate of survival function as well as SE
 km_table %>% select(time, d_i, n_i, S_t, SE_S_t)
 ```
 
+Relative to part a), this estimate for the survival function seems to lag behind the estimates in a), by a little amount each time such that by the end the discrepancy is just notable.
+
 **d) Estimate the mean time to death restricted to 683 days based on product-limit estimator found in part c)**
+
+$\hat\mu(\tau) = \int_0^\tau \hat{S}(t)\,dt$
+
+$\widehat{\mathrm{Var}}\!\left[\hat{\mu}(\tau)\right]
+=
+\sum_{i=1}^{D}
+\left(
+\int_{t_i}^{\tau} \hat{S}(t)\,dt
+\right)^2
+\frac{d_i}{Y_i (Y_i - d_i)}$
+
+$\hat{\mu}(\tau)
+\pm
+z_{1-\alpha/2}
+\sqrt{
+\widehat{\mathrm{Var}}\!\left[\hat{\mu}(\tau)\right]
+}$
+
+```{r}
+tau <- 683
+
+#will use survival package
+fit <- survfit(
+  Surv(time, death) ~ 1,
+  data = lung
+)
+
+summary(fit, rmean = tau)$table
+
+rmst <- 275.96
+SE_rmst <- 39.7343
+
+CI_lower <- rmst - 1.96*SE_rmst
+CI_upper <- rmst + 1.96*SE_rmst
+c(CI_lower, CI_upper)
+```
+
+Mean estimate: 275.96
+
+CI: \[198, 354\]
 
 **e) Estimate the mean time to death by finding the area under the survival curve found in part c. Find SE of estimate.**
 
+$\hat\mu = \int_0^∞ \hat{S}(t)\,dt$ is area under curve estimate
+
+```{r}
+tab <- summary(fit)$table
+
+# mean time to death (area under KM curve)
+mean_surv <- tab["rmean"]
+
+# standard error of mean survival
+SE_mean_surv <- tab["se(rmean)"]
+
+c(mean_survival = mean_surv,
+  SE = SE_mean_surv)
+```
+
+Mean = 278, SE = 40.4
+
+This estimate takes censoring data into account, however followup is complete so doesn't affect this case.
+
 **f) Compute the usual estimate of the time to death based on complete follow-up data by finding the arithmetic mean of the complete follow-up data. Find SE of this estimate in the usual way as sample SD/sqrt(n). Compare to e)**
+
+SE = $s/sqrt(n)$
+
+```{r}
+#arithmetic mean time to death
+mean_complete <- mean(lung$time)
+
+#sample size
+N <- nrow(lung)
+
+#sample SD
+sd_complete <- sd(lung$time)
+
+#standard error
+SE_complete <- sd_complete / sqrt(N)
+
+c(mean_complete = mean_complete,
+  SE = SE_complete)
+```
+
+This estimate does not take censored data into account, however follow-up is complete in this example so this doesn't matter, the estimates are the same as e). The only difference is the SE due to the different variance calculation methods.
