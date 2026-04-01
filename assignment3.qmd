@@ -858,6 +858,115 @@ CI for surgically placed catheter: \[15.3, 24.9\] = 20.1
 
 ## Question 4.7
 
+30 diabetic subjects recruited and followed until death or end of study. Subject age at entry and exit given. We are interested in estimating the survival curve for a 60 or for a 70 year old diabetic.
+
+This data has left truncation and right censoring.
+
+```{r}
+rm(list = ls())
+library(readr)
+diabetic <- read_csv("4.8.csv", col_types = cols(entry_age = col_number(),     exit_age = col_number(), death_indicator = col_number()))
+
+head(diabetic)
+```
+
+**a) Construct a table showing the number of subjects at risk, Y, as a function of age**
+
+Diabetics needed to survive long enough from birth until the beginning of the study.
+
+To calculate number of subjects at risk, consider subjects who have entered the study and have not yet exited: entry age ≤ t, exit age ≥ t.
+
+```{r}
+#create ages in risk set
+ages <- sort(unique(c(diabetic$entry_age, diabetic$exit_age)))
+
+#compute number at risk at each age
+risk_table <- data.frame(age = ages) %>%
+  rowwise() %>%
+  mutate(Y = sum(diabetic$entry_age <= age & diabetic$exit_age >= age)) %>%
+  ungroup()
+
+risk_table
+```
+
+**b) Estimate the conditional survival function for the age of death of a diabetic patient who has survived to age 60.**
+
+$S(t∣T≥60)=\frac {S(60)}{S(t)​}, t≥60$
+
+```{r}
+fit <- survfit(Surv(entry_age, exit_age, death_indicator) ~ 1, data = diabetic)
+
+summary_fit <- summary(fit)
+
+#survival at all times >= 60
+times_60 <- summary_fit$time[summary_fit$time >= 60]
+surv_60  <- summary_fit$surv[summary_fit$time >= 60]
+
+#survival at age 60
+S_60 <- summary(fit, times = 60)$surv
+
+#conditional survival
+cond_surv_60 <- surv_60 / S_60
+
+data.frame(age = times_60, S_cond_60 = cond_surv_60)
+```
+
+**c) Estimate the conditional survival function for the age of death of a diabetic patient who has survived to age 70.**
+
+$S(t∣T≥70)=\frac {S(70)}{S(t)​}, t≥70$
+
+```{r}
+#survival at all times >= 70
+times_70 <- summary_fit$time[summary_fit$time >= 70]
+surv_70  <- summary_fit$surv[summary_fit$time >= 70]
+
+#survival at age 70
+S_70 <- summary(fit, times = 70)$surv
+
+#conditional survival
+cond_surv_70 <- surv_70 / S_70
+
+data.frame(age = times_70, S_cond_70 = cond_surv_70)
+```
+
+**d) Suppose an investigator incorrectly ignored the left truncation and simply treated the data as right-censored, repeat a-c.**
+
+Recompute everything with purposefully wrong formula specification (i.e. ignoring entry age)
+
+```{r}
+#business as usual (without left truncation): ignore entry age
+fit_wrong <- survfit(Surv(exit_age, death_indicator) ~ 1, data = diabetic)
+
+ages <- sort(unique(diabetic$exit_age))
+
+risk_wrong <- data.frame(age = ages) %>%
+  rowwise() %>%
+  mutate(Y = sum(diabetic$exit_age >= age)) %>%
+  ungroup()
+
+summary_wrong <- summary(fit_wrong)
+
+times_60_w <- summary_wrong$time[summary_wrong$time >= 60]
+surv_60_w  <- summary_wrong$surv[summary_wrong$time >= 60]
+
+S_60_w <- summary(fit_wrong, times = 60)$surv
+
+cond_surv_60_w <- surv_60_w / S_60_w
+
+data.frame(age = times_60_w, S_cond_60_wrong = cond_surv_60_w)
+
+times_70_w <- summary_wrong$time[summary_wrong$time >= 70]
+surv_70_w  <- summary_wrong$surv[summary_wrong$time >= 70]
+
+S_70_w <- summary(fit_wrong, times = 70)$surv
+
+cond_surv_70_w <- surv_70_w / S_70_w
+
+data.frame(age = times_70_w, S_cond_70_wrong = cond_surv_70_w)
+```
+
+These estimates are higher than the ones that properly account for left truncated data. THis is because ignoring left truncation causes survival bias, where people in the risk set are included before they become observable, which artificially inflates the risk set at the younger ages, leading to biased survival estimates.
+
 ## Question 4.8 
 
 Patients admitted to the hospital at a random age and followed until death or end of study -\> there is left truncation and right censoring.
