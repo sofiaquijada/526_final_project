@@ -740,3 +740,122 @@ c(mean_complete = mean_complete,
 ```
 
 This estimate does not take censored data into account, however follow-up is complete in this example so this doesn't matter, the estimates are the same as e). The only difference is the SE due to the different variance calculation methods.
+
+## Question 4.4
+
+Times to first exit site infections in months of patients with renal insufficiency was reported.
+
+43 patients had a surgically placed catheter - group1
+
+76 patients had percutaneous placement of catheter - group0
+
+type: group0 = type 2, group1 = type1
+
+delta: infection yes/no
+
+time: times to infection in months
+
+```{r}
+rm(list = ls())
+data(kidney)
+```
+
+**a) For each group plot the estimated survival function. Which technique seems better in delaying the time to infection?**
+
+```{r}
+#use survival package
+surv_kidney <- Surv(time = kidney$time, event = kidney$delta)
+
+fit_kidney <- survfit(surv_kidney ~ type, data=kidney)
+
+plot(fit_kidney, ylab="Survival Probability", 
+     xlab="Months", col = c("red", "blue"))
+legend("bottomleft", 
+       legend = c("Surgical", "Percutaneous"),
+       col = c("red", "blue"),
+       lty = 1)
+```
+
+The percutaneous placement of the catherer seems to be the method that better delays infection, with advantage most clearly seen \>10months (despite initial disadvantage \<5 months, long term this method fares better).
+
+**b) Estimate the cumulative hazard rate for each group of patients. Provide a crude estimate of the hazard rate at 5 months after placement of catheter in each group.**
+
+We know the derivative of the cumulative hazard = hazard rate.
+
+Look at slope of $\hat H(t)$ at t = 5 months to estimate hazard rate crudely -\> read around 4.5 and 5.5 months, divide by difference of (1)..
+
+```{r}
+#plot since already computed
+plot(fit_kidney,
+     fun = "cumhaz",
+     xlab = "Months",
+     ylab = "Cumulative Hazard",
+     col = c("red", "blue"))
+legend("topleft",
+       legend = c("Surgical", "Percutaneous"),
+       col = c("red", "blue"),
+       lty = 1)
+#this uses Nelson-Aalen estimate
+
+#crude estimate from slope
+summary_5 <- summary(fit_kidney, times = c(4.5, 5.5))
+
+# crude hazard ≈ change in cumulative hazard / change in time
+h_5_group1 <- diff(summary_5$cumhaz[summary_5$strata == "type=1"]) / 1
+h_5_group0 <- diff(summary_5$cumhaz[summary_5$strata == "type=0"]) / 1
+h_5_group1
+h_5_group0
+```
+
+The crude estimate for both groups is either 0 or very close to 0, from which we can infer no matter which method is used, 5 months after placement the hazard rate is not increasing.
+
+**c) Find a 95% CI for the mean time to first exit site infection restricted to 36 months for both groups.**
+
+$\hat\mu(\tau) = \int_0^\tau \hat{S}(t)\,dt$
+
+$\widehat{\mathrm{Var}}\!\left[\hat{\mu}(\tau)\right]
+=
+\sum_{i=1}^{D}
+\left(
+\int_{t_i}^{\tau} \hat{S}(t)\,dt
+\right)^2
+\frac{d_i}{Y_i (Y_i - d_i)}$
+
+$\hat{\mu}(\tau)
+\pm
+z_{1-\alpha/2}
+\sqrt{
+\widehat{\mathrm{Var}}\!\left[\hat{\mu}(\tau)\right]
+}$
+
+```{r}
+kidneyfit_36 <- survfit(
+  Surv(time, delta) ~ type,
+  data = kidney)
+
+
+tab <- summary(kidneyfit_36, rmean = 36)$table
+
+mean2 <- tab["type=2", "rmean"]
+se2   <- tab["type=2", "se(rmean)"]
+
+mean1 <- tab["type=1", "rmean"]
+se1   <- tab["type=1", "se(rmean)"]
+
+CI2 <- c(mean2 - 1.96 * se2,
+         mean2 + 1.96 * se2)
+
+CI1 <- c(mean1 - 1.96 * se1,
+         mean1 + 1.96 * se1)
+
+c(CI2, mean2)
+c(CI1, mean1)
+```
+
+CI for percutaneous catheter placement: \[25.8, 33.3\], mean time to infection = 29.5
+
+CI for surgically placed catheter: \[15.3, 24.9\] = 20.1
+
+## Question 4.7
+
+## Question 4.8 
