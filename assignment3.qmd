@@ -859,3 +859,64 @@ CI for surgically placed catheter: \[15.3, 24.9\] = 20.1
 ## Question 4.7
 
 ## Question 4.8 
+
+Patients admitted to the hospital at a random age and followed until death or end of study -\> there is left truncation and right censoring.
+
+X = patient's age at death
+
+To use the same equations whilst considering left truncation, need to know age at study entrance $L_J$, time of death/censoring $T_j$, #individuals with event at time i $d_i$ and #individuals at risk of experiencing event at time i $Y_i$.
+
+We consider patients at risk if they have already been admitted (age ≤ t), and they have not yet died or been censored (age ≥ t).
+
+Dataset: 26 psychiatric inpatients, on-study time, age at admission, gender
+
+```{r}
+rm(list = ls())
+data(psych)
+#age at admission (age), time of death/censoring (time)
+#death: 0 if censored, 1 otherwise
+```
+
+**a) Plot the number at risk,** $Y_i$, **as a function of age**
+
+```{r}
+#event times
+event_age <- psych$age + psych$time
+
+#ordered ages
+ages <- sort(unique(event_age))
+
+#calculate Yi
+Y <- sapply(ages, function(t) {
+  sum(psych$age <= t & event_age >= t)
+})
+
+plot(
+  ages, Y,
+  type = "s",
+  xlab = "Age",
+  ylab = "Number at risk (Yi)",
+  main = "Number at Risk as Function of Age"
+)
+```
+
+From the plot we can determine that the #individuals at risk decrease as age decreases, there are much more "younger" people at risk. Number at risk decreases as patients die or are censored, so this curve makes sense, as people get older their on study-time ends sooner.
+
+**b) Estimate the conditional survival function for a psychiatric patient who has survived to age 30 without entering a psychiatric hospital.**
+
+$S(t∣T≥30)=\frac {S(30)}{S(t)​}, t≥30$ , using conditional probability definition to consider left truncation.
+
+```{r}
+
+#survival function takes left censoring into account like this
+fit_30 <- survfit(
+  Surv(pmax(psych$age, 30), event_age, psych$death) ~ 1
+)
+
+plot(
+  fit_30,
+  xlab = "Age",
+  ylab = "Conditional survival probability",
+  main = "Survival Function Given Survival to Age 30"
+)
+```
