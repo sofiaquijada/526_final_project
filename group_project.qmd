@@ -1,0 +1,37 @@
+---
+title: "Final Project"
+author: "Sofia Quijada, Lawrence Plastina"
+format: html
+editor: visual
+---
+
+```{r}
+#| echo: false
+
+packages <- c("survival", "KMsurv", "tidyverse", "flexsurv")
+
+lapply(packages, library, character.only = TRUE)
+```
+
+```{r}
+# Reading in data from the `KMsurv` package
+data(aids)
+
+summary(aids)
+
+aids <- aids %>%
+  mutate(onset = infect + induct, # defining onset as ABSOLUTE time to onset
+         t_real = induct) %>% # and defining "induction since infection" as t
+  select(-induct) %>% # getting rid of this stupid variable
+  mutate(rtrunc = 8.00 - infect)
+
+s_t_nonpar <- flexsurv::survrtrunc(t = t_real, rtrunc = rtrunc, tmax = 8, data = aids)
+
+flexsurv:::plot.survrtrunc(s_t_nonpar)
+
+test <- flexsurv::flexsurvrtrunc(t = induct,
+                             tinit = infect,
+                             data = aids,
+                             method = "final",
+                             dist = "gengamma")
+```
