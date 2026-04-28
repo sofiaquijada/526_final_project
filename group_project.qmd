@@ -54,24 +54,29 @@ survobj <- Surv(aids$t_real)
 sfnaive <- survfit(survobj ~ 1, data=aids)
 lines(sfnaive, conf.int=TRUE, lty=2, col="red")
 
-# Should do in ggplot now
-
-survminer::ggsurvplot(sfnaive, data = aids, conf.int = TRUE)
-
 ```
 
 ```{r}
 # Parametric model comparison
 
-# test <- flexsurv::flexsurvrtrunc(t = t_real,
-#                              tinit = infect,
-#                              rtrunc = rtrunc,
-#                              data = aids,
-#                              method = "final",
-#                              dist = "weibull")
-# 
-# flexsurv:::summary.flexsurvrtrunc(test)
+test <- flexsurv::flexsurvrtrunc(t = t_real,
+                             tinit = infect,
+                             tmax = 8,
+                             rtrunc = rtrunc,
+                             data = aids,
+                             method = "joint",
+                             dist = "gompertz")
 
+flexsurv:::summary.flexsurvrtrunc(test)
+
+regression <- flexsurvreg(Surv(t_real) ~ adult, 
+                          data = aids,
+                          rtrunc = rtrunc,
+                          dist = "weibull")
+
+flexsurv:::plot.flexsurvreg(regression, main = "Comparing Weibull Distribution with \nNon-Parametric Survival Function")
+lines(sfnaive, conf.int = TRUE, lty = 2, col = "blue")
+legend("topright", legend = c("Non-Parametric", "Weibull"), lty = c(1,2), col = c("black", "red"))
 
 ```
 
