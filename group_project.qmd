@@ -8,7 +8,7 @@ editor: visual
 ```{r}
 #| echo: false
 
-packages <- c("survival", "KMsurv", "tidyverse", "flexsurv")
+packages <- c("survival", "KMsurv", "tidyverse", "flexsurv", "truncreg", "survminer")
 
 lapply(packages, library, character.only = TRUE)
 ```
@@ -25,13 +25,58 @@ aids <- aids %>%
   select(-induct) %>% # getting rid of this stupid variable
   mutate(rtrunc = 8.00 - infect)
 
-s_t_nonpar <- flexsurv::survrtrunc(t = t_real, rtrunc = rtrunc, tmax = 8, data = aids)
+s_t_nonpar <- flexsurv::survrtrunc(t = t_real, 
+                                   rtrunc = rtrunc, 
+                                   tmax = 8, data = aids)
 
 flexsurv:::plot.survrtrunc(s_t_nonpar)
 
-test <- flexsurv::flexsurvrtrunc(t = induct,
-                             tinit = infect,
-                             data = aids,
-                             method = "final",
-                             dist = "gengamma")
+# ggplot2::ggplot(data = aids, aes())
+
+aids_children <- aids %>%
+  dplyr::filter(adult == 0)
+
+
+```
+
+```{r}
+# Attempting naive fit: doing exactly what is in
+# the notes for survrtrunc
+
+# First, repeating the right-truncated fit
+
+sf <- survrtrunc(t_real, rtrunc, data=aids, tmax = 8)
+
+plot(sf, conf.int=TRUE)
+
+survobj <- Surv(aids$t_real)
+
+sfnaive <- survfit(survobj ~ 1, data=aids)
+lines(sfnaive, conf.int=TRUE, lty=2, col="red")
+
+# Should do in ggplot now
+
+survminer::ggsurvplot(sfnaive, data = aids, conf.int = TRUE)
+
+```
+
+```{r}
+# Parametric model comparison
+
+# test <- flexsurv::flexsurvrtrunc(t = t_real,
+#                              tinit = infect,
+#                              rtrunc = rtrunc,
+#                              data = aids,
+#                              method = "final",
+#                              dist = "weibull")
+# 
+# flexsurv:::summary.flexsurvrtrunc(test)
+
+
+```
+
+```{r}
+# Comparing children and adults: from section 7.3
+
+
 ```
