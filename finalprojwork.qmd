@@ -1,0 +1,179 @@
+---
+title: "finalproj"
+format: html
+editor: visual
+---
+
+```{r}
+library(KMsurv)
+library(survival)
+library(flexsurv)
+library(tidyverse)
+data(aids)
+```
+
+## KM Estimator
+
+Try product-limit estimator: $\hat{S}(t)=∏_{ti≤t}(1−d_i/Y_i)$
+
+$R_i$ = $8 - X_i$, use this number as left truncated data
+
+$d_i$ = number with an induction time of $X_i$
+
+$Y_i$ = number at risk, number of individuals with a value of R between $X_i$ and $R_i$
+
+```{r}
+# t = vector of observed times from initial event to final event
+# individual specific right truncation points 
+aids <- aids %>%
+  mutate(onset = infect + induct, 
+         t_real = induct) %>%
+  mutate(rtrunc = 8.00 - infect)
+
+aids_children <- aids %>% subset(adult == 0)
+
+s_t_nonpar <- survrtrunc(
+  t = induct, rtrunc = 8 - infect, tmax = 8, data = aids)
+
+s_t_nonpar_child <- survrtrunc(
+  t = induct, rtrunc = 8 - infect, tmax = 8, data = aids_children)
+```
+
+Try naive fit:
+
+```{r}
+sf_naive <- survfit(Surv(induct) ~ 1, data = aids)
+sf_naive
+```
+
+Plot:
+
+```{r}
+plot(s_t_nonpar,
+     conf.int = TRUE,
+     xlab = "Time from infection to AIDS (years)",
+     ylab = "Survival probability",
+     main = "Right-Truncated vs Naive Survival Estimate")
+
+lines(sf_naive,
+      conf.int = TRUE,
+      lty = 2,
+      col = "red")
+
+legend("topright",
+       legend = c("Right-truncated estimator", "Naive Kaplan-Meier"),
+       lty = c(1, 2),
+       col = c("black", "red"))
+```
+
+In study, you only see people whose AIDS diagnosis happened before the study ends - systematically removing longer times to onset of AIDS.
+
+infect + induct ≤ 8 selection criteria
+
+i.e. induct ≤ 8 - infect
+
+So each person has maximum observable induction time R = 8 - infect.
+
+In the naive KM estimation, late infections can only be observed if their induction times are short... so long induction times are selectively excluded, and the survival curves drop off faster. Without taking truncation into account the estimation is biased towards short induction times because they're the only ones that satisfy study inclusion criteria infect + induct ≤ 8 so survival is underestimated.
+
+denominator ni is missing individuals who would still be at risk at later times, survival curve falls too quickly.
+
+## Parametric models
+
+```{r}
+#t = vector of time differences between initial and final event 
+#tinit absolutue time of initial event for each individual
+#rtrunc = individual specific right truncation points on the same scale as t
+tmax <- 8
+
+aids_adult<- aids %>% subset(adult == 1)
+
+fit_weibull <- flexsurvrtrunc(
+  t = induct,
+  tinit = infect,
+  rtrunc = 8 - infect,
+  tmax = tmax,
+  method = "joint",
+  dist = "weibull",
+  theta = 0.1,
+  data = aids_adult
+)
+
+summary(fit_weibull)
+```
+
+Theta needs to be specified for survival not to linger along 1. \
+
+Access hazard:
+
+```{r}
+haz_weibull <- summary(
+  fit_weibull,
+  type = "hazard")
+```
+
+## Report Work
+
+```{r}
+tmax <- 8
+
+aids_plot <- aids %>%
+  mutate(
+    subject = row_number(),
+    event_time = infect + induct
+  ) %>%
+  arrange(infect)
+
+ggplot(aids_plot, aes(y = subject)) +
+  
+  #blue is 0 -> infection
+  geom_segment(
+    aes(
+      x = 0,
+      xend = infect,
+      yend = subject,
+      color = "Time before infection"
+    ),
+    linewidth = 0.3
+  ) +
+  
+  #red is infection -> induction
+  geom_segment(
+    aes(
+      x = infect,
+      xend = event_time,
+      yend = subject,
+      color = "Induction period"
+    ),
+    linewidth = 0.3
+  ) +
+  
+  #truncation boundary
+  geom_vline(
+    xintercept = tmax,
+    linetype = "dashed",
+    linewidth = 0.3
+  ) +
+  
+  scale_color_manual(
+    name = "",
+    values = c(
+      "Time before infection" = "blue",
+      "Induction period" = "red"
+    )
+  ) +
+  
+  labs(
+    title = "Timeline of Infection and Induction Times",
+    x = "Time (years)",
+    y = "Subject"
+  ) +
+  
+  coord_cartesian(xlim = c(0, tmax)) +
+  
+  theme_classic()
+```
+
+### Methodology
+
+Consider $X_i$ and $T_i$ for all subjects i, where $X_i$
