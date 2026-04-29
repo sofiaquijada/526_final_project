@@ -1,0 +1,87 @@
+---
+title: "Final Project"
+author: "Sofia Quijada, Lawrence Plastina"
+format: html
+editor: visual
+---
+
+```{r}
+#| echo: false
+
+packages <- c("survival", "KMsurv", "tidyverse", "flexsurv", "truncreg", "survminer")
+
+lapply(packages, library, character.only = TRUE)
+```
+
+```{r}
+# Reading in data from the `KMsurv` package
+data(aids)
+
+summary(aids)
+
+aids <- aids %>%
+  mutate(onset = infect + induct, # defining onset as ABSOLUTE time to onset
+         t_real = induct) %>% # and defining "induction since infection" as t
+  select(-induct) %>% # getting rid of this stupid variable
+  mutate(rtrunc = 8.00 - infect)
+
+s_t_nonpar <- flexsurv::survrtrunc(t = t_real, 
+                                   rtrunc = rtrunc, 
+                                   tmax = 8, data = aids)
+
+flexsurv:::plot.survrtrunc(s_t_nonpar)
+
+# ggplot2::ggplot(data = aids, aes())
+
+aids_children <- aids %>%
+  dplyr::filter(adult == 0)
+
+
+```
+
+```{r}
+# Attempting naive fit: doing exactly what is in
+# the notes for survrtrunc
+
+# First, repeating the right-truncated fit
+
+sf <- survrtrunc(t_real, rtrunc, data=aids, tmax = 8)
+
+plot(sf, conf.int=TRUE)
+
+survobj <- Surv(aids$t_real)
+
+sfnaive <- survfit(survobj ~ 1, data=aids)
+lines(sfnaive, conf.int=TRUE, lty=2, col="red")
+
+```
+
+```{r}
+# Parametric model comparison
+
+test <- flexsurv::flexsurvrtrunc(t = t_real,
+                             tinit = infect,
+                             tmax = 8,
+                             rtrunc = rtrunc,
+                             data = aids,
+                             method = "joint",
+                             dist = "gompertz")
+
+flexsurv:::summary.flexsurvrtrunc(test)
+
+regression <- flexsurvreg(Surv(t_real) ~ adult, 
+                          data = aids,
+                          rtrunc = rtrunc,
+                          dist = "weibull")
+
+flexsurv:::plot.flexsurvreg(regression, main = "Comparing Weibull Distribution with \nNon-Parametric Survival Function")
+lines(sfnaive, conf.int = TRUE, lty = 2, col = "blue")
+legend("topright", legend = c("Non-Parametric", "Weibull"), lty = c(1,2), col = c("black", "red"))
+
+```
+
+```{r}
+# Comparing children and adults: from section 7.3
+
+
+```
